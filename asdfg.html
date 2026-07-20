@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Sistema comprometido</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: 'Courier New', Courier, monospace;
+    position: fixed;
+    touch-action: none;
+  }
+
+  #hack-screen {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 10;
+  }
+
+  #hack-screen.hidden {
+    display: none;
+  }
+
+  /* --- lluvia de codigo de fondo --- */
+  #matrix-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    opacity: 0.35;
+  }
+
+  /* --- vineta / oscurecido de bordes --- */
+  #vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.75) 100%);
+  }
+
+  /* --- lineas de escaneo estilo CRT --- */
+  #scanlines {
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.15) 0px,
+      rgba(0,0,0,0.15) 1px,
+      transparent 2px,
+      transparent 3px
+    );
+    animation: scan-move 6s linear infinite;
+  }
+
+  @keyframes scan-move {
+    0% { background-position: 0 0; }
+    100% { background-position: 0 100px; }
+  }
+
+  #scanline-sweep {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    z-index: 5;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      rgba(0,255,65,0) 0%,
+      rgba(0,255,65,0.08) 50%,
+      rgba(0,255,65,0) 100%
+    );
+    animation: sweep 3s linear infinite;
+  }
+
+  @keyframes sweep {
+    0% { top: -60px; }
+    100% { top: 100%; }
+  }
+
+  #terminal {
+    position: relative;
+    z-index: 6;
+    padding: 20px 16px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+    color: #00ff41;
+    font-size: clamp(11px, 3.6vw, 15px);
+    line-height: 1.5;
+    text-shadow: 0 0 6px rgba(0,255,65,0.8);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .line {
+    opacity: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    animation: appear 0.15s forwards;
+  }
+
+  @keyframes appear {
+    to { opacity: 1; }
+  }
+
+  .prompt { color: #00ff41; }
+  .highlight { color: #ff2b2b; font-weight: bold; }
+  .info { color: #00e5ff; }
+
+  /* --- barra de progreso falsa --- */
+  .progress-wrap {
+    display: inline-block;
+    width: clamp(90px, 40vw, 220px);
+    height: 8px;
+    border: 1px solid #00ff41;
+    margin-left: 6px;
+    vertical-align: middle;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    height: 100%;
+    width: 0%;
+    background: #00ff41;
+    box-shadow: 0 0 8px #00ff41;
+  }
+
+  /* --- texto final con efecto glitch tipo RGB split --- */
+  #final-line {
+    position: relative;
+    font-size: clamp(18px, 6.5vw, 26px);
+    font-weight: bold;
+    letter-spacing: 2px;
+    margin-top: 10px;
+    color: #ff2b2b;
+  }
+
+  #final-line.glitch {
+    animation: glitch-anim 0.18s infinite;
+  }
+
+  #final-line.glitch::before,
+  #final-line.glitch::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  #final-line.glitch::before {
+    color: #00e5ff;
+    animation: glitch-shift-1 0.25s infinite;
+    clip-path: inset(0 0 55% 0);
+  }
+
+  #final-line.glitch::after {
+    color: #fffb00;
+    animation: glitch-shift-2 0.3s infinite;
+    clip-path: inset(55% 0 0 0);
+  }
+
+  @keyframes glitch-anim {
+    0%   { transform: translate(0, 0); }
+    20%  { transform: translate(-2px, 1px); }
+    40%  { transform: translate(2px, -1px); }
+    60%  { transform: translate(-1px, -1px); }
+    80%  { transform: translate(1px, 1px); }
+    100% { transform: translate(0, 0); }
+  }
+
+  @keyframes glitch-shift-1 {
+    0%   { transform: translate(0, 0); }
+    50%  { transform: translate(-3px, 0); }
+    100% { transform: translate(0, 0); }
+  }
+
+  @keyframes glitch-shift-2 {
+    0%   { transform: translate(0, 0); }
+    50%  { transform: translate(3px, 0); }
+    100% { transform: translate(0, 0); }
+  }
+
+  /* --- sacudida de pantalla completa --- */
+  #hack-screen.shake {
+    animation: shake 0.35s infinite;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translate(0, 0); }
+    25% { transform: translate(2px, -1px); }
+    50% { transform: translate(-2px, 1px); }
+    75% { transform: translate(1px, 2px); }
+  }
+
+  /* --- flash blanco de transicion --- */
+  #flash {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    z-index: 50;
+    pointer-events: none;
+  }
+
+  #flash.active {
+    animation: flash-out 0.4s ease-out forwards;
+  }
+
+  @keyframes flash-out {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  #video-container {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.5s ease-in;
+  }
+
+  #video-container.visible {
+    display: flex;
+    opacity: 1;
+  }
+
+  #hack-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+
+  #unmute-btn {
+    position: fixed;
+    bottom: max(30px, calc(env(safe-area-inset-bottom) + 20px));
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    border: 1px solid #fff;
+    padding: 12px 22px;
+    border-radius: 8px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 15px;
+    cursor: pointer;
+    display: none;
+    z-index: 30;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* --- ajustes especificos para pantallas angostas (celulares) --- */
+  @media (max-width: 480px) {
+    #terminal { padding: 16px 14px; }
+    .progress-wrap { width: clamp(70px, 32vw, 140px); }
+    #final-line { letter-spacing: 1px; }
+  }
+
+  @media (max-height: 600px) and (orientation: landscape) {
+    #terminal { font-size: clamp(10px, 3vw, 13px); gap: 2px; }
+    #final-line { font-size: clamp(14px, 4.5vw, 20px); margin-top: 4px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="hack-screen">
+  <canvas id="matrix-canvas"></canvas>
+  <div id="scanline-sweep"></div>
+  <div id="scanlines"></div>
+  <div id="vignette"></div>
+  <div id="terminal">
+    <div id="log"></div>
+  </div>
+</div>
+
+<div id="flash"></div>
+
+<div id="video-container">
+  <video id="hack-video" playsinline>
+    <source src="https://raw.githubusercontent.com/orzeav/Assets/91a42ab7aa348427f15cfef2bfddcf4cc49745fb/Confiar%20es%20bueno%2C%20pero...%20no%20confiar%20es%20mejor..mp4" type="video/mp4">
+    Tu navegador no soporta video HTML5.
+  </video>
+</div>
+
+<button id="unmute-btn">🔊 Activar sonido</button>
+
+<script>
+(function () {
+  const TYPE_DURATION_MS = 4000;   // duracion de la fase de "escritura" del texto
+  const FINAL_HOLD_MS = 2000;      // el texto final se queda fijo 2 segundos
+
+  const logEl = document.getElementById('log');
+  const hackScreen = document.getElementById('hack-screen');
+  const videoContainer = document.getElementById('video-container');
+  const video = document.getElementById('hack-video');
+  const unmuteBtn = document.getElementById('unmute-btn');
+  const flashEl = document.getElementById('flash');
+
+  /* ---------------- Lluvia de codigo (canvas) ---------------- */
+  const canvas = document.getElementById('matrix-canvas');
+  const ctx = canvas.getContext('2d');
+  let matrixInterval = null;
+
+  function setupMatrix() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const fontSize = 16;
+    const columns = Math.floor(canvas.width / fontSize);
+    const drops = new Array(columns).fill(1);
+    const chars = "0123456789ABCDEF$#%&";
+
+    matrixInterval = setInterval(() => {
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#00ff41";
+      ctx.font = fontSize + "px monospace";
+
+      for (let i = 0; i < drops.length; i++) {
+        const text = chars[Math.floor(Math.random() * chars.length)];
+        ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+        if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
+          drops[i] = 0;
+        }
+        drops[i]++;
+      }
+    }, 45);
+  }
+
+  setupMatrix();
+  window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+  });
+
+  /* ---------------- Deteccion de datos del dispositivo ---------------- */
+  function detectBrowser(ua) {
+    if (/Edg\//.test(ua)) return "Microsoft Edge";
+    if (/OPR\//.test(ua) || /Opera/.test(ua)) return "Opera";
+    if (/Chrome\//.test(ua) && !/Chromium/.test(ua)) return "Google Chrome";
+    if (/Firefox\//.test(ua)) return "Mozilla Firefox";
+    if (/Safari\//.test(ua) && !/Chrome/.test(ua)) return "Safari";
+    return "Navegador desconocido";
+  }
+
+  function detectOS(ua) {
+    if (/Windows NT/.test(ua)) return "Windows";
+    if (/Mac OS X/.test(ua)) return "macOS";
+    if (/Android/.test(ua)) return "Android";
+    if (/iPhone|iPad|iPod/.test(ua)) return "iOS";
+    if (/Linux/.test(ua)) return "Linux";
+    return "Sistema desconocido";
+  }
+
+  const ua = navigator.userAgent;
+  const browser = detectBrowser(ua);
+  const os = detectOS(ua);
+  const resolution = `${screen.width}x${screen.height}`;
+  const lang = navigator.language || "desconocido";
+
+  /* ---------------- Guion de lineas ---------------- */
+  const scriptLines = [
+    { text: "> Iniciando protocolo de intrusion...", cls: "prompt" },
+    { text: "> Estableciendo conexion remota", cls: "prompt", progress: true },
+    { text: "> Accediendo al sistema objetivo...", cls: "prompt" },
+    { text: "> Sistema operativo detectado: ", cls: "info", extra: os, extraCls: "highlight" },
+    { text: "> Navegador detectado: ", cls: "info", extra: browser, extraCls: "highlight" },
+    { text: "> Resolucion de pantalla: ", cls: "info", extra: resolution, extraCls: "highlight" },
+    { text: "> Idioma del sistema: ", cls: "info", extra: lang, extraCls: "highlight" },
+    { text: "> Obteniendo direccion IP...", cls: "prompt" },
+    { text: "> Direccion IP: ", cls: "info", extra: "obteniendo...", extraCls: "highlight", id: "ip-line" }
+  ];
+
+  const stepDelay = Math.max(120, Math.floor(TYPE_DURATION_MS / (scriptLines.length + 2)));
+
+  let ipValue = "0.0.0.0";
+  fetch("https://api.ipify.org?format=json")
+    .then(r => r.json())
+    .then(data => {
+      ipValue = data.ip;
+      const ipLine = document.getElementById("ip-line");
+      if (ipLine) {
+        const span = ipLine.querySelector(".highlight");
+        if (span) span.textContent = ipValue;
+      }
+    })
+    .catch(() => {
+      const ipLine = document.getElementById("ip-line");
+      if (ipLine) {
+        const span = ipLine.querySelector(".highlight");
+        if (span) span.textContent = "no disponible";
+      }
+    });
+
+  function renderLine(item) {
+    const div = document.createElement("div");
+    div.className = "line";
+    if (item.id) div.id = item.id;
+
+    const mainSpan = document.createElement("span");
+    mainSpan.className = item.cls;
+    mainSpan.textContent = item.text;
+    div.appendChild(mainSpan);
+
+    if (item.extra !== undefined) {
+      const extraSpan = document.createElement("span");
+      extraSpan.className = item.extraCls || "";
+      extraSpan.textContent = item.extra;
+      div.appendChild(extraSpan);
+    }
+
+    if (item.progress) {
+      const wrap = document.createElement("span");
+      wrap.className = "progress-wrap";
+      const bar = document.createElement("span");
+      bar.className = "progress-bar";
+      wrap.appendChild(bar);
+      div.appendChild(wrap);
+      requestAnimationFrame(() => {
+        bar.style.transition = `width ${stepDelay * 0.9}ms linear`;
+        bar.style.width = "100%";
+      });
+    }
+
+    logEl.appendChild(div);
+  }
+
+  function glitchFlash() {
+    hackScreen.classList.add("shake");
+    setTimeout(() => hackScreen.classList.remove("shake"), 90);
+  }
+
+  scriptLines.forEach((item, i) => {
+    setTimeout(() => {
+      renderLine(item);
+      glitchFlash();
+    }, i * stepDelay);
+  });
+
+  /* ---------------- Linea final con efecto glitch, fija 2s ---------------- */
+  setTimeout(() => {
+    const finalDiv = document.createElement("div");
+    finalDiv.id = "final-line";
+    finalDiv.className = "glitch";
+    finalDiv.textContent = "ACCESO CONCEDIDO";
+    finalDiv.setAttribute("data-text", "ACCESO CONCEDIDO");
+    logEl.appendChild(finalDiv);
+
+    hackScreen.classList.add("shake");
+    setTimeout(() => hackScreen.classList.remove("shake"), 300);
+  }, scriptLines.length * stepDelay + 150);
+
+  /* ---------------- Transicion al video ---------------- */
+  const totalBeforeTransition = scriptLines.length * stepDelay + 150 + FINAL_HOLD_MS;
+
+  setTimeout(() => {
+    flashEl.classList.add("active");
+
+    setTimeout(() => {
+      if (matrixInterval) clearInterval(matrixInterval);
+      hackScreen.classList.add("hidden");
+      videoContainer.classList.add("visible");
+
+      video.muted = false;
+      video.volume = 1.0;
+
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(() => {
+          unmuteBtn.style.display = "block";
+          video.muted = true;
+          video.play();
+        });
+      }
+    }, 200);
+  }, totalBeforeTransition);
+
+  unmuteBtn.addEventListener("click", () => {
+    video.muted = false;
+    video.play();
+    unmuteBtn.style.display = "none";
+  });
+})();
+</script>
+
+</body>
+</html>
